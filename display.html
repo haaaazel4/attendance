@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>출석 QR</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #0f172a;
+    color: #f1f5f9;
+    font-family: "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+  p.sub { color: #94a3b8; margin-top: 0; margin-bottom: 2rem; }
+  #qrcode {
+    background: white;
+    padding: 24px;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+  }
+  .class-id {
+    margin-top: 1.5rem;
+    font-size: 1rem;
+    color: #64748b;
+  }
+  .refresh-note {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #475569;
+  }
+</style>
+</head>
+<body>
+  <h1>📷 출석 체크 QR코드</h1>
+  <p class="sub">휴대폰 카메라로 QR코드를 스캔해주세요</p>
+  <div id="qrcode"></div>
+  <div class="class-id" id="classIdLabel"></div>
+
+  <script type="module">
+    import { getTodayClassId } from "./config.js";
+
+    const classId = getTodayClassId();
+    document.getElementById("classIdLabel").textContent = `수업 ID: ${classId}`;
+
+    // 현재 페이지 위치를 기준으로 checkin.html 경로를 자동 생성합니다.
+    const checkinUrl = new URL("checkin.html", window.location.href);
+    checkinUrl.searchParams.set("class", classId);
+
+    new QRCode(document.getElementById("qrcode"), {
+      text: checkinUrl.toString(),
+      width: 320,
+      height: 320,
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>출석 관리자 대시보드</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f1f5f9;
+    font-family: "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    color: #0f172a;
+    padding: 24px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  h1 { margin: 0; font-size: 1.6rem; }
+  .class-id { color: #64748b; font-size: 0.9rem; }
+  .stats {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .stat-card {
+    background: white;
+    border-radius: 14px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    flex: 1;
+    min-width: 140px;
+  }
+  .stat-card .num { font-size: 1.8rem; font-weight: 700; }
+  .stat-card .label { color: #64748b; font-size: 0.85rem; }
+  .stat-card.present .num { color: #16a34a; }
+  .stat-card.absent .num { color: #dc2626; }
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 640px) {
+    .columns { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: white;
+    border-radius: 14px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  }
+  .panel h2 { font-size: 1rem; margin-top: 0; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.95rem;
+  }
+  li:last-child { border-bottom: none; }
+  .time { color: #94a3b8; font-size: 0.8rem; }
+  button#downloadBtn {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: none;
+    background: #0f172a;
+    color: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>📋 실시간 출석 현황</h1>
+      <div class="class-id" id="classIdLabel"></div>
+    </div>
+    <button id="downloadBtn">CSV 다운로드</button>
+  </header>
+
+  <div class="stats">
+    <div class="stat-card present">
+      <div class="num" id="presentCount">0</div>
+      <div class="label">출석</div>
+    </div>
+    <div class="stat-card absent">
+      <div class="num" id="absentCount">0</div>
+      <div class="label">미출석</div>
+    </div>
+    <div class="stat-card">
+      <div class="num" id="totalCount">0</div>
+      <div class="label">전체 인원</div>
+    </div>
+  </div>
+
+  <div class="columns">
+    <div class="panel">
+      <h2>✅ 출석자</h2>
+      <ul id="presentList"></ul>
+    </div>
+    <div class="panel">
+      <h2>⏳ 미출석자</h2>
+      <ul id="absentList"></ul>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getFirestore, collection, onSnapshot
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { firebaseConfig, STUDENTS, getTodayClassId } from "./config.js";
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const params = new URLSearchParams(window.location.search);
+  const classId = params.get("class") || getTodayClassId();
+  document.getElementById("classIdLabel").textContent = `수업 ID: ${classId}`;
+
+  const presentList = document.getElementById("presentList");
+  const absentList = document.getElementById("absentList");
+  const presentCount = document.getElementById("presentCount");
+  const absentCount = document.getElementById("absentCount");
+  const totalCount = document.getElementById("totalCount");
+  totalCount.textContent = STUDENTS.length;
+
+  let latestRecords = [];
+
+  const attendanceRef = collection(db, "classes", classId, "attendance");
+
+  onSnapshot(attendanceRef, (snapshot) => {
+    const records = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      records.push({
+        name: data.name,
+        time: data.checkedInAt ? data.checkedInAt.toDate() : null,
+      });
+    });
+    records.sort((a, b) => (a.time && b.time ? a.time - b.time : 0));
+    latestRecords = records;
+    render(records);
+  });
+
+  function formatTime(date) {
+    if (!date) return "";
+    return date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  function render(records) {
+    const presentNames = new Set(records.map((r) => r.name));
+    const absentNames = STUDENTS.filter((n) => !presentNames.has(n));
+
+    presentList.innerHTML = records
+      .map((r) => `<li><span>${r.name}</span><span class="time">${formatTime(r.time)}</span></li>`)
+      .join("") || "<li style='color:#94a3b8;'>아직 출석한 학생이 없습니다</li>";
+
+    absentList.innerHTML = absentNames
+      .map((n) => `<li><span>${n}</span></li>`)
+      .join("") || "<li style='color:#94a3b8;'>전원 출석 완료!</li>";
+
+    presentCount.textContent = records.length;
+    absentCount.textContent = absentNames.length;
+  }
+
+  document.getElementById("downloadBtn").addEventListener("click", () => {
+    const presentNames = new Set(latestRecords.map((r) => r.name));
+    const rows = [["이름", "출석여부", "체크인시각"]];
+    STUDENTS.forEach((name) => {
+      const rec = latestRecords.find((r) => r.name === name);
+      rows.push([name, rec ? "출석" : "미출석", rec ? formatTime(rec.time) : ""]);
+    });
+    const csv = "\uFEFF" + rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance_${classId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+</script>
+</body>
+</html>
