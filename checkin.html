@@ -25,7 +25,17 @@
     box-shadow: 0 4px 24px rgba(0,0,0,0.08);
     text-align: center;
   }
-  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .day-badge {
+    display: inline-block;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #2563eb;
+    background: #eff6ff;
+    padding: 4px 14px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
   p.desc { color: #64748b; font-size: 0.9rem; margin-top: 0; margin-bottom: 24px; }
   select, button {
     width: 100%;
@@ -69,6 +79,7 @@
 </head>
 <body>
   <div class="card">
+    <div class="day-badge" id="dayBadge" style="display:none;"></div>
     <h1>✅ 출석 체크</h1>
     <p class="desc" id="classLabel">수업 확인 중...</p>
 
@@ -101,7 +112,10 @@
 
     const params = new URLSearchParams(window.location.search);
     const classId = params.get("class");
+    const day = params.get("day");
+    const token = params.get("token");
 
+    const dayBadge = document.getElementById("dayBadge");
     const classLabel = document.getElementById("classLabel");
     const statusBox = document.getElementById("statusBox");
     const selectStep = document.getElementById("selectStep");
@@ -112,34 +126,68 @@
     const savedNameEl = document.getElementById("savedName");
     const switchUserBtn = document.getElementById("switchUserBtn");
 
-    if (!classId) {
-      classLabel.textContent = "잘못된 접근입니다. QR코드를 다시 스캔해주세요.";
-    } else {
-      classLabel.textContent = `수업 ID: ${classId}`;
+    let savedName = null;
+
+    if (day) {
+      dayBadge.textContent = `${day}일차`;
+      dayBadge.style.display = "inline-block";
     }
 
-    STUDENTS.forEach((name) => {
-      const opt = document.createElement("option");
-      opt.value = name;
-      opt.textContent = name;
-      nameSelect.appendChild(opt);
-    });
+    async function verifyToken() {
+      if (!classId || !token) {
+        classLabel.textContent = "잘못된 접근입니다. QR코드를 다시 스캔해주세요.";
+        return;
+      }
+      classLabel.textContent = day ? `${day}일차 출석 체크` : `수업 ID: ${classId}`;
 
-    nameSelect.addEventListener("change", () => {
-      checkinBtn.disabled = !nameSelect.value;
-    });
+      try {
+        const classSnap = await getDoc(doc(db, "classes", classId));
+        const data = classSnap.exists() ? classSnap.data() : null;
+        const isExpired = !data || !data.expiresAt || Date.now() > data.expiresAt;
+        const isMismatch = !data || data.currentToken !== token;
 
-    const savedName = localStorage.getItem("attendance_student_name");
-    if (savedName && STUDENTS.includes(savedName)) {
-      savedNameEl.textContent = savedName;
-      selectStep.style.display = "none";
-      quickStep.style.display = "block";
+        if (isMismatch || isExpired) {
+          statusBox.innerHTML = `<div class="status error">QR코드가 만료되었습니다. 화면의 새 QR코드를 다시 스캔해주세요.</div>`;
+          selectStep.style.display = "none";
+          quickStep.style.display = "none";
+          return;
+        }
+
+        initStudentPicker();
+      } catch (err) {
+        console.error(err);
+        statusBox.innerHTML = `<div class="status error">확인 중 오류가 발생했습니다. 다시 시도해주세요.</div>`;
+      }
+    }
+
+    function initStudentPicker() {
+      STUDENTS.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        nameSelect.appendChild(opt);
+      });
+
+      nameSelect.addEventListener("change", () => {
+        checkinBtn.disabled = !nameSelect.value;
+      });
+
+      savedName = localStorage.getItem("attendance_student_name");
+      if (savedName && STUDENTS.includes(savedName)) {
+        savedNameEl.textContent = savedName;
+        selectStep.style.display = "none";
+        quickStep.style.display = "block";
+      } else {
+        selectStep.style.display = "block";
+      }
     }
 
     switchUserBtn.addEventListener("click", () => {
       quickStep.style.display = "none";
       selectStep.style.display = "block";
     });
+
+    verifyToken();
 
     async function doCheckin(name) {
       if (!classId) return;

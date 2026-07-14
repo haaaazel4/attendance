@@ -21,12 +21,11 @@ export const STUDENTS = [
   "황선영",
 ];
 
-// 오늘 날짜 기준 수업 ID를 만들어줍니다. (예: 20260714)
-// 필요하면 수업 이름 등을 앞에 붙여서 커스터마이징 가능합니다.
-export function getTodayClassId() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `class_${y}${m}${d}`;
+// ====== 전체 교육 일수 ======
+export const TOTAL_DAYS = 8;
+
+// N일차의 수업 ID를 만들어줍니다. (예: 1일차 -> "day1")
+export function getClassIdForDay(day) {
+  return `day${day}`;
 }
+

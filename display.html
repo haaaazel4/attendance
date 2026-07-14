@@ -8,7 +8,7 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -16,49 +16,152 @@
     background: #0f172a;
     color: #f1f5f9;
     font-family: "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    padding: 24px;
   }
-  h1 { font-size: 2rem; margin-bottom: 0.25rem; }
-  p.sub { color: #94a3b8; margin-top: 0; margin-bottom: 2rem; }
+  .day-badge {
+    font-size: 1.1rem;
+    color: #38bdf8;
+    background: rgba(56,189,248,0.12);
+    padding: 6px 18px;
+    border-radius: 999px;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+  h1 { font-size: 2rem; margin: 0 0 0.25rem; }
+  p.sub { color: #94a3b8; margin-top: 0; margin-bottom: 1.5rem; }
   #qrcode {
     background: white;
     padding: 24px;
     border-radius: 16px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.4);
   }
-  .class-id {
-    margin-top: 1.5rem;
-    font-size: 1rem;
-    color: #64748b;
+  .countdown {
+    margin-top: 0.75rem;
+    font-size: 0.95rem;
+    color: #38bdf8;
+    font-variant-numeric: tabular-nums;
   }
   .refresh-note {
     margin-top: 0.5rem;
     font-size: 0.85rem;
     color: #475569;
   }
+  .day-picker {
+    margin-top: 2rem;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 480px;
+  }
+  .day-btn {
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: #1e293b;
+    color: #cbd5e1;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .day-btn.active {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: white;
+    font-weight: 700;
+  }
 </style>
 </head>
 <body>
+  <div class="day-badge" id="dayBadge">1일차</div>
   <h1>📷 출석 체크 QR코드</h1>
   <p class="sub">휴대폰 카메라로 QR코드를 스캔해주세요</p>
   <div id="qrcode"></div>
-  <div class="class-id" id="classIdLabel"></div>
+  <div class="countdown" id="countdownLabel"></div>
+  <div class="refresh-note">보안을 위해 QR코드가 5분마다 자동으로 바뀝니다</div>
+
+  <div class="day-picker" id="dayPicker"></div>
 
   <script type="module">
-    import { getTodayClassId } from "./config.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+    import { firebaseConfig, TOTAL_DAYS, getClassIdForDay } from "./config.js";
 
-    const classId = getTodayClassId();
-    document.getElementById("classIdLabel").textContent = `수업 ID: ${classId}`;
+    const ROTATE_MS = 5 * 60 * 1000; // 5분
 
-    // 현재 페이지 위치를 기준으로 checkin.html 경로를 자동 생성합니다.
-    const checkinUrl = new URL("checkin.html", window.location.href);
-    checkinUrl.searchParams.set("class", classId);
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-    new QRCode(document.getElementById("qrcode"), {
-      text: checkinUrl.toString(),
-      width: 320,
-      height: 320,
-      correctLevel: QRCode.CorrectLevel.M,
-    });
+    const qrBox = document.getElementById("qrcode");
+    const countdownLabel = document.getElementById("countdownLabel");
+    const dayBadge = document.getElementById("dayBadge");
+    const dayPicker = document.getElementById("dayPicker");
+
+    let currentDay = Number(localStorage.getItem("attendance_display_day")) || 1;
+    let expiresAt = 0;
+    let rotateTimer = null;
+
+    function makeToken() {
+      return crypto.randomUUID().slice(0, 8);
+    }
+
+    function renderDayPicker() {
+      dayPicker.innerHTML = "";
+      for (let d = 1; d <= TOTAL_DAYS; d++) {
+        const btn = document.createElement("button");
+        btn.className = "day-btn" + (d === currentDay ? " active" : "");
+        btn.textContent = `${d}일차`;
+        btn.addEventListener("click", () => setDay(d));
+        dayPicker.appendChild(btn);
+      }
+    }
+
+    function setDay(d) {
+      currentDay = d;
+      localStorage.setItem("attendance_display_day", String(d));
+      dayBadge.textContent = `${d}일차`;
+      renderDayPicker();
+
+      if (rotateTimer) clearInterval(rotateTimer);
+      rotateQR();
+      rotateTimer = setInterval(rotateQR, ROTATE_MS);
+    }
+
+    async function rotateQR() {
+      const classId = getClassIdForDay(currentDay);
+      const token = makeToken();
+      expiresAt = Date.now() + ROTATE_MS;
+
+      await setDoc(
+        doc(db, "classes", classId),
+        { currentToken: token, expiresAt, day: currentDay },
+        { merge: true }
+      );
+
+      const checkinUrl = new URL("checkin.html", window.location.href);
+      checkinUrl.searchParams.set("class", classId);
+      checkinUrl.searchParams.set("day", String(currentDay));
+      checkinUrl.searchParams.set("token", token);
+
+      qrBox.innerHTML = "";
+      new QRCode(qrBox, {
+        text: checkinUrl.toString(),
+        width: 320,
+        height: 320,
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    }
+
+    function tickCountdown() {
+      const remain = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+      const m = String(Math.floor(remain / 60)).padStart(2, "0");
+      const s = String(remain % 60).padStart(2, "0");
+      countdownLabel.textContent = `다음 갱신까지 ${m}:${s}`;
+    }
+
+    dayBadge.textContent = `${currentDay}일차`;
+    renderDayPicker();
+    setDay(currentDay);
+    setInterval(tickCountdown, 1000);
   </script>
 </body>
 </html>
