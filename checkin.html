@@ -25,17 +25,7 @@
     box-shadow: 0 4px 24px rgba(0,0,0,0.08);
     text-align: center;
   }
-  .day-badge {
-    display: inline-block;
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #2563eb;
-    background: #eff6ff;
-    padding: 4px 14px;
-    border-radius: 999px;
-    margin-bottom: 10px;
-  }
-  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
   p.desc { color: #64748b; font-size: 0.9rem; margin-top: 0; margin-bottom: 24px; }
   select, button {
     width: 100%;
@@ -51,10 +41,8 @@
     border: none;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s;
   }
   button:disabled { background: #94a3b8; cursor: not-allowed; }
-  button:not(:disabled):hover { background: #1d4ed8; }
   .status {
     margin-top: 16px;
     font-size: 0.95rem;
@@ -79,11 +67,10 @@
 </head>
 <body>
   <div class="card">
-    <div class="day-badge" id="dayBadge" style="display:none;"></div>
     <h1>✅ 출석 체크</h1>
-    <p class="desc" id="classLabel">수업 확인 중...</p>
+    <p class="desc" id="classLabel">확인 중...</p>
 
-    <div id="selectStep">
+    <div id="selectStep" style="display:none;">
       <select id="nameSelect">
         <option value="">본인 이름을 선택하세요</option>
       </select>
@@ -92,7 +79,7 @@
 
     <div id="quickStep" style="display:none;">
       <p style="color:#64748b; margin-bottom:4px;">저장된 이름</p>
-      <div class="confirm-name" id="savedName"></div>
+      <div class="confirm-name" id="savedNameEl"></div>
       <button id="quickCheckinBtn">이 이름으로 출석하기</button>
       <button class="switch-user" id="switchUserBtn">다른 사람인가요? 이름 다시 선택</button>
     </div>
@@ -112,10 +99,7 @@
 
     const params = new URLSearchParams(window.location.search);
     const classId = params.get("class");
-    const day = params.get("day");
-    const token = params.get("token");
 
-    const dayBadge = document.getElementById("dayBadge");
     const classLabel = document.getElementById("classLabel");
     const statusBox = document.getElementById("statusBox");
     const selectStep = document.getElementById("selectStep");
@@ -123,44 +107,16 @@
     const nameSelect = document.getElementById("nameSelect");
     const checkinBtn = document.getElementById("checkinBtn");
     const quickCheckinBtn = document.getElementById("quickCheckinBtn");
-    const savedNameEl = document.getElementById("savedName");
+    const savedNameEl = document.getElementById("savedNameEl");
     const switchUserBtn = document.getElementById("switchUserBtn");
 
     let savedName = null;
 
-    if (day) {
-      dayBadge.textContent = `${day}일차`;
-      dayBadge.style.display = "inline-block";
-    }
+    if (!classId) {
+      classLabel.textContent = "잘못된 접근입니다. QR코드를 다시 스캔해주세요.";
+    } else {
+      classLabel.textContent = "출석할 이름을 선택해주세요";
 
-    async function verifyToken() {
-      if (!classId || !token) {
-        classLabel.textContent = "잘못된 접근입니다. QR코드를 다시 스캔해주세요.";
-        return;
-      }
-      classLabel.textContent = day ? `${day}일차 출석 체크` : `수업 ID: ${classId}`;
-
-      try {
-        const classSnap = await getDoc(doc(db, "classes", classId));
-        const data = classSnap.exists() ? classSnap.data() : null;
-        const isExpired = !data || !data.expiresAt || Date.now() > data.expiresAt;
-        const isMismatch = !data || data.currentToken !== token;
-
-        if (isMismatch || isExpired) {
-          statusBox.innerHTML = `<div class="status error">QR코드가 만료되었습니다. 화면의 새 QR코드를 다시 스캔해주세요.</div>`;
-          selectStep.style.display = "none";
-          quickStep.style.display = "none";
-          return;
-        }
-
-        initStudentPicker();
-      } catch (err) {
-        console.error(err);
-        statusBox.innerHTML = `<div class="status error">확인 중 오류가 발생했습니다. 다시 시도해주세요.</div>`;
-      }
-    }
-
-    function initStudentPicker() {
       STUDENTS.forEach((name) => {
         const opt = document.createElement("option");
         opt.value = name;
@@ -175,7 +131,6 @@
       savedName = localStorage.getItem("attendance_student_name");
       if (savedName && STUDENTS.includes(savedName)) {
         savedNameEl.textContent = savedName;
-        selectStep.style.display = "none";
         quickStep.style.display = "block";
       } else {
         selectStep.style.display = "block";
@@ -186,8 +141,6 @@
       quickStep.style.display = "none";
       selectStep.style.display = "block";
     });
-
-    verifyToken();
 
     async function doCheckin(name) {
       if (!classId) return;
@@ -202,16 +155,13 @@
         if (existing.exists()) {
           statusBox.innerHTML = `<div class="status already">이미 출석 처리되었습니다. (${name})</div>`;
         } else {
-          await setDoc(ref, {
-            name,
-            checkedInAt: serverTimestamp(),
-          });
+          await setDoc(ref, { name, checkedInAt: serverTimestamp() });
           statusBox.innerHTML = `<div class="status success">${name}님, 출석이 완료되었습니다! 🎉</div>`;
         }
         localStorage.setItem("attendance_student_name", name);
       } catch (err) {
         console.error(err);
-        statusBox.innerHTML = `<div class="status error">오류가 발생했습니다. 다시 시도해주세요.</div>`;
+        statusBox.innerHTML = `<div class="status error">오류가 발생했습니다: ${err.message}</div>`;
       } finally {
         checkinBtn.disabled = false;
         quickCheckinBtn.disabled = false;

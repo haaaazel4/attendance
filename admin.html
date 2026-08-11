@@ -17,20 +17,12 @@
   header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-end;
     flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 20px;
   }
   h1 { margin: 0; font-size: 1.6rem; }
-  .header-right { display: flex; align-items: center; gap: 10px; }
-  select#daySelect {
-    padding: 10px 14px;
-    border-radius: 10px;
-    border: 1px solid #cbd5e1;
-    font-size: 0.95rem;
-    background: white;
-  }
   .stats {
     display: flex;
     gap: 12px;
@@ -89,10 +81,7 @@
 <div class="wrap">
   <header>
     <h1>📋 실시간 출석 현황</h1>
-    <div class="header-right">
-      <select id="daySelect"></select>
-      <button id="downloadBtn">CSV 다운로드</button>
-    </div>
+    <button id="downloadBtn">CSV 다운로드</button>
   </header>
 
   <div class="stats">
@@ -124,17 +113,14 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import {
-    getFirestore, collection, onSnapshot
-  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-  import { firebaseConfig, STUDENTS, TOTAL_DAYS, getClassIdForDay } from "./config.js";
+  import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { firebaseConfig, STUDENTS, getClassId } from "./config.js";
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  const params = new URLSearchParams(window.location.search);
+  const classId = getClassId();
 
-  const daySelect = document.getElementById("daySelect");
   const presentList = document.getElementById("presentList");
   const absentList = document.getElementById("absentList");
   const presentCount = document.getElementById("presentCount");
@@ -142,16 +128,7 @@
   const totalCount = document.getElementById("totalCount");
   totalCount.textContent = STUDENTS.length;
 
-  for (let d = 1; d <= TOTAL_DAYS; d++) {
-    const opt = document.createElement("option");
-    opt.value = d;
-    opt.textContent = `${d}일차`;
-    daySelect.appendChild(opt);
-  }
-
   let latestRecords = [];
-  let currentClassId = "";
-  let unsubscribe = null;
 
   function formatTime(date) {
     if (!date) return "";
@@ -174,32 +151,19 @@
     absentCount.textContent = absentNames.length;
   }
 
-  function watchDay(day) {
-    if (unsubscribe) unsubscribe();
-    currentClassId = getClassIdForDay(day);
-
-    const attendanceRef = collection(db, "classes", currentClassId, "attendance");
-    unsubscribe = onSnapshot(attendanceRef, (snapshot) => {
-      const records = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        records.push({
-          name: data.name,
-          time: data.checkedInAt ? data.checkedInAt.toDate() : null,
-        });
+  const attendanceRef = collection(db, "classes", classId, "attendance");
+  onSnapshot(attendanceRef, (snapshot) => {
+    const records = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      records.push({
+        name: data.name,
+        time: data.checkedInAt ? data.checkedInAt.toDate() : null,
       });
-      records.sort((a, b) => (a.time && b.time ? a.time - b.time : 0));
-      latestRecords = records;
-      render(records);
     });
-  }
-
-  const initialDay = Number(params.get("day")) || 1;
-  daySelect.value = String(initialDay);
-  watchDay(initialDay);
-
-  daySelect.addEventListener("change", () => {
-    watchDay(Number(daySelect.value));
+    records.sort((a, b) => (a.time && b.time ? a.time - b.time : 0));
+    latestRecords = records;
+    render(records);
   });
 
   document.getElementById("downloadBtn").addEventListener("click", () => {
@@ -213,7 +177,7 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `attendance_${currentClassId}.csv`;
+    a.download = `attendance_${classId}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   });
